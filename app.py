@@ -17,10 +17,10 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>{titulo_documento}</title>
+    <title>__TITULO_DOCUMENTO__</title>
     <style>
-        @page {{ size: A4; margin: 25mm 20mm 20mm 25mm; }}
-        body {{
+        @page { size: A4; margin: 25mm 20mm 20mm 25mm; }
+        body {
             font-family: 'Times New Roman', serif;
             font-size: 11pt;
             line-height: 1.5;
@@ -30,29 +30,29 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
             max-width: 210mm;
             margin: 0 auto;
             padding: 20px;
-        }}
-        .versao-bloco {{ margin-bottom: 20px; }}
-        .versao-tag {{ font-weight: bold; font-size: 10pt; color: #000000; text-align: left; padding-bottom: 5px; }}
-        .relacionamento-links {{ font-size: 9.5pt; color: #555555; text-align: left; padding-bottom: 5px; }}
-        .relacionamento-links a {{ color: #0066cc; text-decoration: none; font-weight: bold; }}
-        .linha-versao {{ border-top: 1px solid #000000; margin-top: 2px; margin-bottom: 15px; }}
-        .header-bloco {{ text-align: center; margin-bottom: 25px; }}
-        .brasao {{ display: block; margin: 0 auto 10px auto; width: 60pt; height: 60pt; object-fit: contain; }}
-        .header-inst {{ font-weight: bold; text-transform: uppercase; font-size: 10pt; line-height: 1.3; margin-bottom: 30px; }}
-        .preambulo {{ text-indent: 1.25cm; margin-top: 12px; margin-bottom: 12px; text-align: justify; }}
-        .artigo {{ text-indent: 1.25cm; margin-top: 14px; margin-bottom: 14px; text-align: justify; }}
-        .paragrafo {{ text-indent: 1.88cm; margin-top: 10px; margin-bottom: 10px; text-align: justify; }}
-        .alterado-vermelho {{ color: #ff0000; font-style: italic; }}
-        .tachado-vermelho {{ text-decoration: line-through; color: #ff0000; }}
-        .nota-rodape-bloco {{ margin-top: 40px; border-top: 1px solid #000000; padding-top: 8px; }}
-        .nota-rodape {{ font-size: 9.5pt; font-style: italic; text-align: justify; color: #444444; }}
+        }
+        .versao-bloco { margin-bottom: 20px; }
+        .versao-tag { font-weight: bold; font-size: 10pt; color: #000000; text-align: left; padding-bottom: 5px; }
+        .relacionamento-links { font-size: 9.5pt; color: #555555; text-align: left; padding-bottom: 5px; }
+        .relacionamento-links a { color: #0066cc; text-decoration: none; font-weight: bold; }
+        .linha-versao { border-top: 1px solid #000000; margin-top: 2px; margin-bottom: 15px; }
+        .header-bloco { text-align: center; margin-bottom: 25px; }
+        .brasao { display: block; margin: 0 auto 10px auto; width: 60pt; height: 60pt; object-fit: contain; }
+        .header-inst { font-weight: bold; text-transform: uppercase; font-size: 10pt; line-height: 1.3; margin-bottom: 30px; }
+        .preambulo { text-indent: 1.25cm; margin-top: 12px; margin-bottom: 12px; text-align: justify; }
+        .artigo { text-indent: 1.25cm; margin-top: 14px; margin-bottom: 14px; text-align: justify; }
+        .paragrafo { text-indent: 1.88cm; margin-top: 10px; margin-bottom: 10px; text-align: justify; }
+        .alterado-vermelho { color: #ff0000; font-style: italic; }
+        .tachado-vermelho { text-decoration: line-through; color: #ff0000; }
+        .nota-rodape-bloco { margin-top: 40px; border-top: 1px solid #000000; padding-top: 8px; }
+        .nota-rodape { font-size: 9.5pt; font-style: italic; text-align: justify; color: #444444; }
     </style>
 </head>
 <body>
     <div class="versao-bloco">
-        <div class="versao-tag">{tag_versao}</div>
+        <div class="versao-tag">__TAG_VERSAO__</div>
         <div class="relacionamento-links">
-            Documentos Relacionados: {link_original_html}{links_derivativos_html}
+            Documentos Relacionados: __LINK_ORIGINAL_HTML____LINKS_DERIVATIVOS_HTML__
         </div>
         <div class="linha-versao"></div>
     </div>
@@ -66,7 +66,7 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
         </div>
     </div>
 
-    {corpo_texto}
+    __CORPO_TEXTO__
 
     <div class="nota-rodape-bloco">
         <div class="nota-rodape"><strong>Nota:</strong> Este documento possui caráter estritamente consultivo e informativo, não substituindo o texto original publicado no Boletim de Serviço Eletrônico (BSe) ou no Diário Oficial.</div>
@@ -123,7 +123,6 @@ def pedir_fusao_ao_gemini(texto_original, texto_derivativo, modo_versao):
         )
         return str(response.text)
     except Exception as e_principal:
-        # Se falhar por congestionamento, aciona o substituto da mesma geração compatível
         try:
             # TENTATIVA 2: Rota de Fuga Oficial (Gemini 2.5 Pro)
             response = client.models.generate_content(
@@ -186,13 +185,13 @@ def index():
                 tag = f"VERSÃO CONSOLIDADA — Atualizada em razão das revogações e/ou alterações promovidas por: {nome_ato_derivativo}"
                 titulo = f"Versão Consolidada - {ato_original_nome}"
                 
-            html_final = MODELO_HTML_ESTRITO.format(
-                titulo_documento=titulo,
-                tag_versao=tag,
-                link_original_html=link_original_html,
-                links_derivativos_html=links_derivativos_html,
-                corpo_texto=corpo_html
-            )
+            # Substituição segura usando .replace() para evitar conflito com chaves {} do CSS
+            html_final = MODELO_HTML_ESTRITO
+            html_final = html_final.replace("__TITULO_DOCUMENTO__", titulo)
+            html_final = html_final.replace("__TAG_VERSAO__", tag)
+            html_final = html_final.replace("__LINK_ORIGINAL_HTML__", link_original_html)
+            html_final = html_final.replace("__LINKS_DERIVATIVOS_HTML__", links_derivativos_html)
+            html_final = html_final.replace("__CORPO_TEXTO__", corpo_html)
             
             return Response(
                 html_final,
