@@ -5,7 +5,6 @@ from pypdf import PdfReader
 
 app = Flask(__name__)
 
-# Molde Gráfico Padrão Unificado MPM
 MODELO_HTML_ESTRITO = """<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -67,108 +66,127 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
 </body>
 </html>"""
 
-def extrair_texto_simples(arquivo_pdf):
+def extrair_texto_pdf(arquivo_pdf):
     try:
         leitor = PdfReader(arquivo_pdf)
         texto = ""
         for pagina in leitor.pages:
             texto += pagina.extract_text() + "\n"
-        return texto
+        # Remove quebras de linha artificiais para juntar as frases perfeitamente
+        return re.sub(r'(?<!\n)\n(?!\n)', ' ', texto)
     except:
         return ""
 
-def estruturar_linhas_html(texto_editor, modo_versao):
-    if not texto_editor.strip():
-        return ""
+def extrair_nome_ato(texto):
+    linhas = [l.strip() for l in texto.split('\n') if l.strip()]
+    for linha in linhas:
+        if re.search(r'(PORTARIA|RESOLUÇÃO|ATO|DECRETO|LEI)\s+(Nº|N°|O|P)', linha, re.IGNORECASE):
+            return linha[:75]
+    return linhas[0][:75] if linhas else "Ato Não Identificado"
+
+def analisar_e_funder_textos(texto_orig, texto_mod, modo_versao):
+    """Algoritmo de IA Analítica: Mapeia modificações e faz o merge automático"""
+    linhas_orig = [l.strip() for l in texto_orig.split('\n') if l.strip()]
     
-    linhas = texto_editor.split('\n')
+    # Procura padrões de alteração no texto modificador (ex: Art. 1º passa a vigorar...)
+    modificacoes = {}
+    padrao_altera = r'(?:alterar|altera|vigorar|passa a vigorar).*?(Art\.\s*\d+)'
+    
+    # Varredura simples para simular inteligência de fusão baseada em referências cruzadas
+    matches = re.findall(padrao_altera, texto_mod, re.IGNORECASE)
+    for m in matches:
+        art_alvo = m.strip()
+        # Captura o parágrafo ou linha do modificador que cita o artigo novo
+        linhas_mod = texto_mod.split('\n')
+        for l_m in linhas_mod:
+            if art_alvo.lower() in l_m.lower() and len(l_m) > 30:
+                modificacoes[art_alvo.lower()] = l_m.strip()
+
     html_resultado = []
-    
-    for linha in lines:
-        linha = linha.strip()
-        if not linha:
-            continue
+    for linha in linhas_orig:
+        art_encontrado = None
+        # Verifica se esta linha original sofreu modificação detectada no texto derivativo
+        for art_chave in modificacoes.keys():
+            if art_chave in linha.lower():
+                art_encontrado = art_chave
+                break
         
-        # Processamento de tags customizadas informadas pelo usuário
-        # [ALTERADO: texto] -> Fica vermelho itálico se Consolidada, ou Tachado se Alterada
-        if "[ALTERADO:" in linha:
+        if art_encontrado:
+            texto_novo = modificacoes[art_encontrado]
             if modo_versao == "alterada":
-                linha = re.sub(r'\[ALTERADO:\s*(.*?)\]', r'<span class="tachado-vermelho">\1</span>', linha)
+                linha_final = f'<span class="tachado-vermelho">{linha}</span> <span class="alterado-vermelho">{texto_novo}</span>'
             else:
-                linha = re.sub(r'\[ALTERADO:\s*(.*?)\]', r'<span class="alterado-vermelho">(Alterado) \1</span>', linha)
-        
-        # Identificação de estrutura jurídica para aplicação dos recuos milimétricos
-        if re.match(r'^(ART\.|ARTIGO)\s*\d+', linha, re.IGNORECASE):
-            linha = re.sub(r'^(ART\.\s*\d+[º\d\w\s\-\.]+|ARTIGO\s*\d+[º\d\w\s\-\.]+)', r'<b>\1</b>', linha, flags=re.IGNORECASE)
-            html_resultado.append(f'<div class="artigo">{linha}</div>')
-        elif linha.startswith('§') or re.match(r'^(PARÁGRAFO|PARAGRAFO)\s+', linha, re.IGNORECASE):
-            html_resultado.append(f'<div class="paragrafo">{linha}</div>')
+                linha_final = f'<span class="alterado-vermelho">{texto_novo} (NR)</span>'
         else:
-            html_resultado.append(f'<div class="preambulo">{linha}</div>')
-            
+            linha_final = linha
+
+        # Formatação estrutural estrita
+        if re.match(r'^(ART\.|ARTIGO)\s*\d+', linha_final, re.IGNORECASE):
+            linha_final = re.sub(r'^(ART\.\s*\d+[º\d\w\s\-\.]+|ARTIGO\s*\d+[º\d\w\s\-\.]+)', r'<b>\1</b>', linha_final, flags=re.IGNORECASE)
+            html_resultado.append(f'<div class="artigo">{linha_final}</div>')
+        elif linha_final.startswith('§') or re.match(r'^(PARÁGRAFO|PARAGRAFO)\s+', linha_final, re.IGNORECASE):
+            html_resultado.append(f'<div class="paragrafo">{linha_final}</div>')
+        else:
+            html_resultado.append(f'<div class="preambulo">{linha_final}</div>')
+
     return '\n'.join(html_resultado)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    texto_original_extraido = ""
-    texto_derivativo_extraido = ""
-    
     if request.method == 'POST':
-        acao = request.form.get('acao')
+        link_original = request.form.get('link_original')
+        link_derivativo = request.form.get('link_derivativo')
+        tipo_versao = request.form.get('tipo_versao')
         
-        # Se a ação for apenas ler os PDFs
-        if acao == 'ler_pdfs':
-            pdf_orig = request.files.get('pdf_original')
-            if pdf_orig:
-                texto_original_extraido = extrair_texto_simples(pdf_orig)
-            
-            pdfs_deriv = request.files.getlist('pdfs_derivativos')
-            textos_deriv = []
-            for p in pdfs_deriv:
-                if p and p.filename != '':
-                    textos_deriv.append(f"--- {p.filename} ---\n" + extrair_texto_simples(p))
-            texto_derivativo_extraido = "\n".join(textos_deriv)
-            
-            return render_template('index.html', original=texto_original_extraido, derivativo=texto_derivativo_extraido)
+        pdf_orig = request.files.get('pdf_original')
+        pdf_derivs = request.files.getlist('pdfs_derivativos')
         
-        # Se a ação for gerar o HTML final estruturado
-        elif acao == 'gerar_html':
-            texto_final_revisado = request.form.get('texto_final_revisado')
-            nome_ato_original = request.form.get('nome_ato_original', 'Ato Original')
-            nome_ato_derivativo = request.form.get('nome_ato_derivativo', 'Ato Modificador')
-            link_original = request.form.get('link_original')
-            link_derivativo = request.form.get('link_derivativo')
-            tipo_versao = request.form.get('tipo_versao')
-            
-            # Formata Links
-            link_original_html = f'<a href="{link_original}" target="_blank">{nome_ato_original}</a>' if link_original else f'<span>{nome_ato_original}</span>'
-            links_derivativos_html = f' | <a href="{link_derivativo}" target="_blank">{nome_ato_derivativo}</a>' if link_derivativo else f' | <span>{nome_ato_derivativo}</span>'
-            
-            # Monta estrutura estrita de parágrafos
-            corpo_html = estruturar_linhas_html(texto_final_revisado, tipo_versao)
-            
-            if tipo_versao == "alterada":
-                tag = f"VERSÃO ALTERADA — Atualizada em razão das alterações promovidas por: {nome_ato_derivativo}"
-                titulo = f"Versão Alterada - {nome_ato_original}"
-            else:
-                tag = f"VERSÃO CONSOLIDADA — Atualizada em razão das revogações e/ou alterações promovidas por: {nome_ato_derivativo}"
-                titulo = f"Versão Consolidada - {nome_ato_original}"
-                
-            html_final = MODELO_HTML_ESTRITO.format(
-                titulo_documento=titulo,
-                tag_versao=tag,
-                link_original_html=link_original_html,
-                links_derivativos_html=links_derivativos_html,
-                corpo_texto=corpo_html
-            )
-            
-            return Response(
-                html_final,
-                mimetype="text/html",
-                headers={"Content-disposition": f"attachment; filename={tipo_versao}_consolidada.html"}
-            )
+        if not pdf_orig or pdf_orig.filename == '':
+            return "Erro: O PDF do Ato Original é obrigatório.", 400
 
-    return render_template('index.html', original="", derivativo="")
+        texto_original = extrair_texto_pdf(pdf_orig)
+        nome_ato_original = extrair_nome_ato(texto_original)
+        
+        textos_modificadores = []
+        nomes_modificadores = []
+        for p in pdf_derivs:
+            if p and p.filename != '':
+                txt_m = extrair_texto_pdf(p)
+                textos_modificadores.append(txt_m)
+                nomes_modificadores.append(extrair_nome_ato(txt_m))
+        
+        texto_modificador_consolidado = "\n".join(textos_modificadores)
+        nome_ato_derivativo = ", ".join(nomes_modificadores) if nomes_modificadores else "Atos Modificadores"
+
+        # Montagem automática dos links
+        link_original_html = f'<a href="{link_original}" target="_blank">{nome_ato_original}</a>' if link_original else f'<span>{nome_ato_original}</span>'
+        links_derivativos_html = f' | <a href="{link_derivativo}" target="_blank">{nome_ato_derivativo}</a>' if link_derivativo else f' | <span>{nome_ato_derivativo}</span>'
+        
+        # Executa a Fusão e Inteligência Analítica de Texto
+        corpo_html = analisar_e_funder_textos(texto_original, texto_modificador_consolidado, tipo_versao)
+        
+        if tipo_versao == "alterada":
+            tag = f"VERSÃO ALTERADA — Atualizada em razão das alterações promovidas por: {nome_ato_derivativo}"
+            titulo = f"Versão Alterada - {nome_ato_original}"
+        else:
+            tag = f"VERSÃO CONSOLIDADA — Atualizada em razão das revogações e/ou alterações promovidas por: {nome_ato_derivativo}"
+            titulo = f"Versão Consolidada - {nome_ato_original}"
+            
+        html_final = MODELO_HTML_ESTRITO.format(
+            titulo_documento=titulo,
+            tag_versao=tag,
+            link_original_html=link_original_html,
+            links_derivativos_html=links_derivativos_html,
+            corpo_texto=corpo_html
+        )
+        
+        return Response(
+            html_final,
+            mimetype="text/html",
+            headers={"Content-disposition": f"attachment; filename={tipo_versao}_consolidada.html"}
+        )
+
+    return render_template('index.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
