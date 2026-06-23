@@ -35,11 +35,6 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
         .artigo {{ text-indent: 1.25cm; margin-top: 12px; margin-bottom: 12px; text-align: justify; }}
         .paragrafo {{ text-indent: 1.88cm; margin-top: 8px; margin-bottom: 8px; text-align: justify; }}
         .nota-alterado {{ color: #ff0000; font-style: italic; font-size: 10pt; }}
-        .revogado-info {{ color: #000000; }}
-        .assinatura {{ text-align: center; margin-top: 50px; page-break-inside: avoid; }}
-        .nome {{ font-weight: bold; text-transform: uppercase; }}
-        .nota-rodape-bloco {{ margin-top: 40px; border-top: 1px solid #000000; padding-top: 8px; }}
-        .nota-rodape {{ font-size: 9.5pt; font-style: italic; text-align: justify; }}
     </style>
 </head>
 <body>
@@ -47,7 +42,7 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
         <div class="versao-tag">{tag_versao}</div>
         <div class="relacionamento-links">
             Documentos Relacionados: 
-            <a href="{link_original}" target="_blank">{nome_original}</a>
+            {link_original_html}
             {links_derivativos_html}
         </div>
         <div class="linha-versao"></div>
@@ -63,15 +58,10 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
     </div>
 
     {corpo_texto}
-
-    <div class="nota-rodape-bloco">
-        <div class="nota-rodape"><strong>Nota:</strong> Este documento possui caráter estritamente consultivo e informativo, não substituindo o texto original publicado no Boletim de Serviço Eletrônico (BSe) ou no Diário Oficial.</div>
-    </div>
 </body>
 </html>"""
 
 def extrair_texto_pdf(arquivo_pdf):
-    """Função auxiliar que lê o arquivo PDF e extrai o texto contido nele"""
     try:
         leitor = PdfReader(arquivo_pdf)
         texto_completo = ""
@@ -84,44 +74,58 @@ def extrair_texto_pdf(arquivo_pdf):
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        # 1. Captura as informações de identificação e links do formulário
-        ato_original_nome = request.form.get('ato_original_nome')
         link_original = request.form.get('link_original')
         link_derivativo = request.form.get('link_derivativo')
         tipo_versao = request.form.get('tipo_versao')
         
-        # 2. Captura o arquivo PDF ÚNICO do Ato Original
+        # 1. Processa o PDF do Ato Original
         pdf_original = request.files.get('pdf_original')
         texto_ato_original = ""
+        ato_original_nome = "Ato Original"
+        
         if pdf_original and pdf_original.filename != '':
             texto_ato_original = extrair_texto_pdf(pdf_original)
+            # Tenta capturar a primeira linha preenchida do PDF como nome da portaria
+            linhas_original = [l.strip() for l in texto_ato_original.split('\n') if l.strip()]
+            if linhas_original:
+                # Limita o tamanho do nome extraído para não quebrar o layout
+                ato_original_nome = linhas_original[0][:80] 
+            else:
+                ato_original_nome = os.path.splitext(pdf_original.filename)[0]
 
-        # 3. Captura UM ou MAIS arquivos PDF dos Atos Derivativos
+        # 2. Processa os PDFs dos Atos Derivativos
         pdfs_derivativos = request.files.getlist('pdfs_derivativos')
-        textos_derivativos = []
         nomes_derivativos = []
         
         for pdf in pdfs_derivativos:
             if pdf and pdf.filename != '':
                 texto_extraido = extrair_texto_pdf(pdf)
-                textos_derivativos.append(texto_extraido)
-                # Remove a extensão .pdf do nome do arquivo para exibição limpa
-                nome_limpo = os.path.splitext(pdf.filename)[0]
-                nomes_derivativos.append(nome_limpo)
+                linhas_derivativo = [l.strip() for l in texto_extraido.split('\n') if l.strip()]
+                if linhas_derivativo:
+                    nomes_derivativos.append(linhas_derivativo[0][:80])
+                else:
+                    nomes_derivativos.append(os.path.splitext(pdf.filename)[0])
 
-        # 4. Montagem dos links de documentos relacionados no topo
         texto_atos_derivativos_nome = ", ".join(nomes_derivativos) if nomes_derivativos else "Atos Modificadores"
+
+        # 3. Montagem inteligente dos links (Se o usuário não preencher, mostra apenas o texto)
+        if link_original and link_original.strip():
+            link_original_html = f'<a href="{link_original}" target="_blank">{ato_original_nome}</a>'
+        else:
+            link_original_html = f'<span>{ato_original_nome}</span>'
+
         links_derivativos_html = ""
         if nomes_derivativos:
-            links_derivativos_html = f' | <a href="{link_derivativo}" target="_blank">{texto_atos_derivativos_nome}</a>'
+            if link_derivativo and link_derivativo.strip():
+                links_derivativos_html = f' | <a href="{link_derivativo}" target="_blank">{texto_atos_derivativos_nome}</a>'
+            else:
+                links_derivativos_html = f' | <span>{texto_atos_derivativos_nome}</span>'
 
-        # 5. Processamento básico do texto (Regras de Negócio)
-        # Em produções futuras, criaremos as funções de inteligência de comparação de texto aqui.
-        # Por enquanto, ele junta o texto lido estruturando nos blocos CSS dinamicamente.
+        # 4. Montagem estruturada do texto
         corpo_construido = ""
         if texto_ato_original:
             linhas = texto_ato_original.split('\n')
-            for linha in lines:
+            for linha in linhas:
                 linha = linha.strip()
                 if not linha:
                     continue
@@ -132,9 +136,9 @@ def index():
                 else:
                     corpo_construido += f'<div class="preambulo">{linha}</div>\n'
         else:
-            corpo_construido = '<div class="artigo"><b>Art. 1º</b> [Nenhum texto pôde ser extraído ou o arquivo PDF original estava vazio].</div>'
+            corpo_construido = '<div class="artigo"><b>Art. 1º</b> [Nenhum texto pôde ser extraído do arquivo PDF enviado].</div>'
 
-        # 6. Define as Tags de Versão baseadas nas escolhas
+        # 5. Define Tags e Título
         if tipo_versao == "alterada":
             tag = f"VERSÃO ALTERADA — Atualizada em razão das alterações promovidas por: {texto_atos_derivativos_nome}"
             titulo = f"Versão Alterada - {ato_original_nome}"
@@ -142,17 +146,15 @@ def index():
             tag = f"VERSÃO CONSOLIDADA — Atualizada em razão das revogações e/ou alterações promovidas por: {texto_atos_derivativos_nome}"
             titulo = f"Versão Consolidada - {ato_original_nome}"
 
-        # 7. Preenche o molde HTML oficial do padrão MPM unificado
+        # 6. Renderização final do Molde Estrito
         html_final = MODELO_HTML_ESTRITO.format(
             titulo_documento=titulo,
             tag_versao=tag,
-            link_original=link_original,
-            nome_original=ato_original_nome,
+            link_original_html=link_original_html,
             links_derivativos_html=links_derivativos_html,
             corpo_texto=corpo_construido
         )
         
-        # Dispara o download do arquivo .html gerado
         return Response(
             html_final,
             mimetype="text/html",
