@@ -1,9 +1,11 @@
 import os
+import re
 from flask import Flask, render_template, request, Response
 from pypdf import PdfReader
 
 app = Flask(__name__)
 
+# Matriz Gráfica Homologada e Estrita (Padrão MPM - Unificado)
 MODELO_HTML_ESTRITO = """<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -30,11 +32,14 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
         .linha-versao {{ border-top: 1px solid #000000; margin-top: 2px; margin-bottom: 15px; }}
         .header-bloco {{ text-align: center; margin-bottom: 25px; }}
         .brasao {{ display: block; margin: 0 auto 10px auto; width: 60pt; height: 60pt; object-fit: contain; }}
-        .header-inst {{ font-weight: bold; text-transform: uppercase; font-size: 10pt; line-height: 1.3; }}
-        .preambulo {{ text-indent: 1.25cm; margin-bottom: 15px; text-align: justify; }}
-        .artigo {{ text-indent: 1.25cm; margin-top: 12px; margin-bottom: 12px; text-align: justify; }}
-        .paragrafo {{ text-indent: 1.88cm; margin-top: 8px; margin-bottom: 8px; text-align: justify; }}
+        .header-inst {{ font-weight: bold; text-transform: uppercase; font-size: 10pt; line-height: 1.3; margin-bottom: 30px; }}
+        .preambulo {{ text-indent: 1.25cm; margin-top: 12px; margin-bottom: 12px; text-align: justify; }}
+        .artigo {{ text-indent: 1.25cm; margin-top: 14px; margin-bottom: 14px; text-align: justify; }}
+        .paragrafo {{ text-indent: 1.88cm; margin-top: 10px; margin-bottom: 10px; text-align: justify; }}
         .nota-alterado {{ color: #ff0000; font-style: italic; font-size: 10pt; }}
+        .alterado-antigo {{ text-decoration: line-through; color: #ff0000; }}
+        .nota-rodape-bloco {{ margin-top: 50px; border-top: 1px solid #000000; padding-top: 8px; }}
+        .nota-rodape {{ font-size: 9.5pt; font-style: italic; text-align: justify; color: #444444; }}
     </style>
 </head>
 <body>
@@ -58,18 +63,55 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
     </div>
 
     {corpo_texto}
+
+    <div class="nota-rodape-bloco">
+        <div class="nota-rodape"><strong>Nota:</strong> Este documento possui caráter estritamente consultivo e informativo, não substituindo o texto original publicado no Boletim de Serviço Eletrônico (BSe) ou no Diário Oficial.</div>
+    </div>
 </body>
 </html>"""
 
-def extrair_texto_pdf(arquivo_pdf):
+def extrair_e_limpar_texto(arquivo_pdf):
+    """Extrai o texto eliminando quebras de linha órfãs que quebram a simetria gráfica"""
     try:
         leitor = PdfReader(arquivo_pdf)
         texto_completo = ""
         for pagina in leitor.pages:
             texto_completo += pagina.extract_text() + "\n"
-        return texto_completo
+        
+        # Junta linhas separadas por quebras simples para remontar parágrafos contínuos
+        texto_limpo = re.sub(r'(?<!\n)\n(?!\n)', ' ', texto_completo)
+        return texto_limpo
     except Exception:
         return ""
+
+def estruturar_em_html(texto_bruto):
+    """Aplica as classes CSS de recuo e peso de fonte segundo a técnica legislativa"""
+    if not texto_bruto.strip():
+        return '<div class="artigo"><b>Art. 1º</b> [Nenhum texto pôde ser extraído do arquivo PDF].</div>'
+    
+    blocos = texto_bruto.split('\n')
+    html_processado = []
+    
+    for bloco in blocos:
+        bloco = bloco.strip()
+        if not bloco:
+            continue
+        
+        # Identifica Artigos (Ex: Art. 1º, Artigo 12)
+        if re.match(r'^(ART\.|ARTIGO)\s*\d+', bloco, re.IGNORECASE):
+            # Deixa o início do artigo em negrito
+            bloco_formatado = re.sub(r'^(ART\.\s*\d+[º\d\w\s\-\.]+|ARTIGO\s*\d+[º\d\w\s\-\.]+)', r'<b>\1</b>', bloco, flags=re.IGNORECASE)
+            html_processado.append(f'<div class="artigo">{bloco_formatado}</div>')
+        
+        # Identifica Parágrafos (Ex: § 1º, Parágrafo único)
+        elif bloco.startswith('§') or re.match(r'^(PARÁGRAFO|PARAGRAFO)\s+', bloco, re.IGNORECASE):
+            html_processado.append(f'<div class="paragrafo">{bloco}</div>')
+            
+        # O restante entra como preâmbulo/texto explicativo
+        else:
+            html_processado.append(f'<div class="preambulo">{bloco}</div>')
+            
+    return '\n'.join(html_processado)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -78,37 +120,37 @@ def index():
         link_derivativo = request.form.get('link_derivativo')
         tipo_versao = request.form.get('tipo_versao')
         
-        # 1. Processa o PDF do Ato Original
+        # 1. Processamento e Leitura Limpa do Ato Original
         pdf_original = request.files.get('pdf_original')
         texto_ato_original = ""
         ato_original_nome = "Ato Original"
         
         if pdf_original and pdf_original.filename != '':
-            texto_ato_original = extrair_texto_pdf(pdf_original)
-            # Tenta capturar a primeira linha preenchida do PDF como nome da portaria
-            linhas_original = [l.strip() for l in texto_ato_original.split('\n') if l.strip()]
-            if linhas_original:
-                # Limita o tamanho do nome extraído para não quebrar o layout
-                ato_original_nome = linhas_original[0][:80] 
+            texto_ato_original = extrair_e_limpar_texto(pdf_original)
+            
+            # Tenta capturar a primeira frase/linha significativa para dar nome à portaria
+            linhas_nome = [l.strip() for l in texto_ato_original.split('\n') if l.strip()]
+            if linhas_nome:
+                ato_original_nome = linhas_nome[0][:75]
             else:
                 ato_original_nome = os.path.splitext(pdf_original.filename)[0]
 
-        # 2. Processa os PDFs dos Atos Derivativos
+        # 2. Processamento e Leitura dos Atos Derivativos (Modificadores)
         pdfs_derivativos = request.files.getlist('pdfs_derivativos')
         nomes_derivativos = []
         
         for pdf in pdfs_derivativos:
             if pdf and pdf.filename != '':
-                texto_extraido = extrair_texto_pdf(pdf)
-                linhas_derivativo = [l.strip() for l in texto_extraido.split('\n') if l.strip()]
+                texto_derivativo = extrair_e_limpar_texto(pdf)
+                linhas_derivativo = [l.strip() for l in texto_derivativo.split('\n') if l.strip()]
                 if linhas_derivativo:
-                    nomes_derivativos.append(linhas_derivativo[0][:80])
+                    nomes_derivativos.append(linhas_derivativo[0][:75])
                 else:
                     nomes_derivativos.append(os.path.splitext(pdf.filename)[0])
 
         texto_atos_derivativos_nome = ", ".join(nomes_derivativos) if nomes_derivativos else "Atos Modificadores"
 
-        # 3. Montagem inteligente dos links (Se o usuário não preencher, mostra apenas o texto)
+        # 3. Formatação dos Links de Relacionamento no Topo
         if link_original and link_original.strip():
             link_original_html = f'<a href="{link_original}" target="_blank">{ato_original_nome}</a>'
         else:
@@ -121,24 +163,10 @@ def index():
             else:
                 links_derivativos_html = f' | <span>{texto_atos_derivativos_nome}</span>'
 
-        # 4. Montagem estruturada do texto
-        corpo_construido = ""
-        if texto_ato_original:
-            linhas = texto_ato_original.split('\n')
-            for linha in linhas:
-                linha = linha.strip()
-                if not linha:
-                    continue
-                if linha.upper().startswith("ART.") or linha.upper().startswith("ARTIGO"):
-                    corpo_construido += f'<div class="artigo"><b>{linha}</b></div>\n'
-                elif linha.startswith("§") or linha.upper().startswith("PARÁGRAFO"):
-                    corpo_construido += f'<div class="paragrafo">{linha}</div>\n'
-                else:
-                    corpo_construido += f'<div class="preambulo">{linha}</div>\n'
-        else:
-            corpo_construido = '<div class="artigo"><b>Art. 1º</b> [Nenhum texto pôde ser extraído do arquivo PDF enviado].</div>'
+        # 4. Geração do Corpo do Texto Rigorosamente Formatado
+        corpo_final_html = estruturar_em_html(texto_ato_original)
 
-        # 5. Define Tags e Título
+        # 5. Definição estrita das Tags superiores
         if tipo_versao == "alterada":
             tag = f"VERSÃO ALTERADA — Atualizada em razão das alterações promovidas por: {texto_atos_derivativos_nome}"
             titulo = f"Versão Alterada - {ato_original_nome}"
@@ -146,13 +174,13 @@ def index():
             tag = f"VERSÃO CONSOLIDADA — Atualizada em razão das revogações e/ou alterações promovidas por: {texto_atos_derivativos_nome}"
             titulo = f"Versão Consolidada - {ato_original_nome}"
 
-        # 6. Renderização final do Molde Estrito
+        # 6. Injeção final de dados no Molde Oficial
         html_final = MODELO_HTML_ESTRITO.format(
             titulo_documento=titulo,
             tag_versao=tag,
             link_original_html=link_original_html,
             links_derivativos_html=links_derivativos_html,
-            corpo_texto=corpo_construido
+            corpo_texto=corpo_final_html
         )
         
         return Response(
