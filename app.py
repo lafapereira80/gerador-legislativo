@@ -3,12 +3,10 @@ import re
 from flask import Flask, render_template, request, Response
 from pypdf import PdfReader
 from google import genai
-from google.genai import types
 
 app = Flask(__name__)
 
-# Configura a IA usando a chave que você vai cadastrar no Render
-# Se não achar a chave, tenta ler uma string vazia para não derrubar o servidor imediatamente
+# Configura a IA usando a chave cadastrada no Render
 API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # Matriz Gráfica Estrita Homologada (Padrão MPM)
@@ -43,7 +41,7 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
         .paragrafo {{ text-indent: 1.88cm; margin-top: 10px; margin-bottom: 10px; text-align: justify; }}
         .alterado-vermelho {{ color: #ff0000; font-style: italic; }}
         .tachado-vermelho {{ text-decoration: line-through; color: #ff0000; }}
-        .nota-rodape-bloco {{ margin-top: 50px; border-top: 1px solid #000000; padding-top: 8px; }}
+        .nota-rodape-bloco {{ margin-top: 40px; border-top: 1px solid #000000; padding-top: 8px; }}
         .nota-rodape {{ font-size: 9.5pt; font-style: italic; text-align: justify; color: #444444; }}
     </style>
 </head>
@@ -84,11 +82,11 @@ def extrair_texto_pdf(arquivo_pdf):
         return ""
 
 def pedir_fusao_ao_gemini(texto_original, texto_derivativo, modo_versao):
-    """Envia os textos para o modelo analítico do Gemini realizar a fusão legislativa real"""
     if not API_KEY:
-        return '<div class="artigo"><b>Erro:</b> A chave de API do Gemini (GEMINI_API_KEY) não foi configurada no Render.</div>'
+        return '<div class="artigo"><b>Erro:</b> A chave de API do Gemini (GEMINI_API_KEY) não foi configurada nas variáveis de ambiente do Render.</div>'
     
     try:
+        # Inicialização correta para o SDK do google-genai v2.0+
         client = genai.Client(api_key=API_KEY)
         
         prompt = f"""
@@ -107,10 +105,9 @@ def pedir_fusao_ao_gemini(texto_original, texto_derivativo, modo_versao):
         1. Identifique quais artigos, parágrafos ou incisos do Ato Original foram alterados ou revogados pelo Ato Derivativo.
         2. Se o tipo for VERSAO CONSOLIDADA: Substitua o texto antigo pelo novo texto diretamente. Ao final do trecho alterado, adicione obrigatoriamente a expressão entre parágrafos vermelhos informando a mudança, usando a tag <span class="alterado-vermelho">(Redação dada pelo Ato Modificador)</span>.
         3. Se o tipo for VERSAO ALTERADA: Mantenha o texto antigo/original, mas envolva-o completamente na tag <span class="tachado-vermelho">texto antigo aqui</span> e insira logo à frente o novo texto modificado envolvido na tag <span class="alterado-vermelho">texto novo aqui</span>.
-        4. Identifique automaticamente na primeira linha significativa de cada documento o Nome Oficial do Ato (Ex: Portaria nº 130/PGJM, de 2022). Seus primeiros outputs devem focar em extrair esses nomes limpos.
 
         REGRAS ESTREITAS DE FORMATAÇÃO HTML (Obrigatório):
-        - Seu output final deve conter APENAS as tags do corpo do texto que substituem os artigos. Não invente blocos, cabeçalhos ou rodapés.
+        - Seu output final deve conter APENAS as tags do corpo do texto que substituem os artigos. Não invente blocos, html completo, cabeçalhos ou rodapés.
         - Toda linha correspondente a um Artigo (ex: Art. 1º, Art. 22) deve ser envelopada estritamente em: <div class="artigo"><b>Art. Xº</b> Resto do texto...</div>
         - Toda linha correspondente a um Parágrafo (ex: § 1º, Parágrafo único) deve ser envelopada estritamente em: <div class="paragrafo">§ Xº Resto do texto...</div>
         - Textos de preâmbulo, ementas, assinaturas ou considerandos devem ser envelopados em: <div class="preambulo">Texto aqui...</div>
@@ -152,7 +149,14 @@ def index():
 
         # Algoritmo auxiliar para tentar ler nomes de exibição amigáveis no topo do HTML
         linhas_orig = [l.strip() for l in texto_original.split('\n') if l.strip()]
-        ato_original_nome = linhas_orig[0][:75] if linhas_orig else "Ato Original"
+        ato_original_nome = "Ato Original"
+        for linha in linhas_orig:
+            if re.search(r'(PORTARIA|RESOLUÇÃO|ATO|DECRETO|LEI)\s+(Nº|N°|O|P)', linha, re.IGNORECASE):
+                ato_original_nome = linha[:75]
+                break
+        if ato_original_nome == "Ato Original" and linhas_orig:
+            ato_original_nome = linhas_orig[0][:75]
+
         nome_ato_derivativo = "Atos Modificadores"
 
         # Montagem dinâmica de links
