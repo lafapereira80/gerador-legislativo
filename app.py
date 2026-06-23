@@ -86,7 +86,6 @@ def pedir_fusao_ao_gemini(texto_original, texto_derivativo, modo_versao):
     if not API_KEY:
         return 'Erro: A chave de API do Gemini (GEMINI_API_KEY) não foi configurada nas variáveis de ambiente do Render.'
     
-    # Inicialização para o SDK do google-genai v2.0+
     client = genai.Client(api_key=API_KEY)
     
     prompt = f"""
@@ -114,11 +113,28 @@ def pedir_fusao_ao_gemini(texto_original, texto_derivativo, modo_versao):
     - Não use Markdown (```html) na resposta. Devolva texto puro contendo apenas as marcações das divs mencionadas.
     """
 
-    response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=prompt
-    )
-    return response.text
+    # TENTATIVA 1: Modelo Principal (Mais recente)
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
+        return response.text
+    except Exception as e_principal:
+        # Se o erro for de servidor indisponível (503) ou alta demanda, aciona a contingência
+        msg_erro = str(e_principal).upper()
+        if "503" in msg_erro or "UNAVAILABLE" in msg_erro or "DEMAND" in msg_erro:
+            try:
+                # TENTATIVA 2: Rota de Fuga (Modelo Altamente Estável)
+                response = client.models.generate_content(
+                    model='gemini-1.5-flash',
+                    contents=prompt
+                )
+                return response.text
+            except Exception as e_contingencia:
+                return f"Erro: Ambos os modelos de IA falharam. Erro contingência: {str(e_contingencia)}"
+        else:
+            return f"Erro no processamento da IA (Modelo 2.5): {str(e_principal)}"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -187,7 +203,7 @@ def index():
             )
             
         except Exception as e:
-            # Captura a falha exata e mostra na tela para sabermos o motivo real do erro 500
+            # Captura a falha exata e mostra na tela se algo fora do padrão quebrar o código do Flask
             erro_detalhado = traceback.format_exc()
             return f"<h3>Ocorreu um erro interno no processamento:</h3><pre>{erro_detalhado}</pre>", 500
 
