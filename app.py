@@ -17,7 +17,7 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>{{titulo_documento}}</title>
+    <title>{titulo_documento}</title>
     <style>
         @page {{ size: A4; margin: 25mm 20mm 20mm 25mm; }}
         body {{
@@ -115,7 +115,7 @@ def pedir_fusao_ao_gemini(texto_original, texto_derivativo, modo_versao):
     - Não use Markdown (```html) na resposta. Devolva texto puro contendo apenas as marcações das divs mencionadas.
     """
 
-    # TENTATIVA 1: Modelo Principal (Mais recente)
+    # TENTATIVA 1: Modelo Titular (Geração 2.5)
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
@@ -123,19 +123,16 @@ def pedir_fusao_ao_gemini(texto_original, texto_derivativo, modo_versao):
         )
         return str(response.text)
     except Exception as e_principal:
-        msg_erro = str(e_principal).upper()
-        if "503" in msg_erro or "UNAVAILABLE" in msg_erro or "DEMAND" in msg_erro:
-            try:
-                # TENTATIVA 2: Rota de Fuga (Modelo Altamente Estável)
-                response = client.models.generate_content(
-                    model='gemini-1.5-flash',
-                    contents=prompt
-                )
-                return str(response.text)
-            except Exception as e_contingencia:
-                return f"Erro: Ambos os modelos de IA falharam. Erro contingência: {str(e_contingencia)}"
-        else:
-            return f"Erro no processamento da IA (Modelo 2.5): {str(e_principal)}"
+        # Se falhar por congestionamento, aciona o substituto da mesma geração compatível
+        try:
+            # TENTATIVA 2: Rota de Fuga Oficial (Gemini 2.5 Pro)
+            response = client.models.generate_content(
+                model='gemini-2.5-pro',
+                contents=prompt
+            )
+            return str(response.text)
+        except Exception as e_contingencia:
+            return f"Erro: Ambos os modelos da nova API (2.5-flash e 2.5-pro) falharam. Detalhes: {str(e_contingencia)}"
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
