@@ -2,9 +2,16 @@ import os
 import re
 from flask import Flask, render_template, request, Response
 from pypdf import PdfReader
+from google import genai
+from google.genai import types
 
 app = Flask(__name__)
 
+# Configura a IA usando a chave que você vai cadastrar no Render
+# Se não achar a chave, tenta ler uma string vazia para não derrubar o servidor imediatamente
+API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+# Matriz Gráfica Estrita Homologada (Padrão MPM)
 MODELO_HTML_ESTRITO = """<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -72,64 +79,51 @@ def extrair_texto_pdf(arquivo_pdf):
         texto = ""
         for pagina in leitor.pages:
             texto += pagina.extract_text() + "\n"
-        # Remove quebras de linha artificiais para juntar as frases perfeitamente
-        return re.sub(r'(?<!\n)\n(?!\n)', ' ', texto)
+        return texto
     except:
         return ""
 
-def extrair_nome_ato(texto):
-    linhas = [l.strip() for l in texto.split('\n') if l.strip()]
-    for linha in linhas:
-        if re.search(r'(PORTARIA|RESOLUÇÃO|ATO|DECRETO|LEI)\s+(Nº|N°|O|P)', linha, re.IGNORECASE):
-            return linha[:75]
-    return linhas[0][:75] if linhas else "Ato Não Identificado"
-
-def analisar_e_funder_textos(texto_orig, texto_mod, modo_versao):
-    """Algoritmo de IA Analítica: Mapeia modificações e faz o merge automático"""
-    linhas_orig = [l.strip() for l in texto_orig.split('\n') if l.strip()]
+def pedir_fusao_ao_gemini(texto_original, texto_derivativo, modo_versao):
+    """Envia os textos para o modelo analítico do Gemini realizar a fusão legislativa real"""
+    if not API_KEY:
+        return '<div class="artigo"><b>Erro:</b> A chave de API do Gemini (GEMINI_API_KEY) não foi configurada no Render.</div>'
     
-    # Procura padrões de alteração no texto modificador (ex: Art. 1º passa a vigorar...)
-    modificacoes = {}
-    padrao_altera = r'(?:alterar|altera|vigorar|passa a vigorar).*?(Art\.\s*\d+)'
-    
-    # Varredura simples para simular inteligência de fusão baseada em referências cruzadas
-    matches = re.findall(padrao_altera, texto_mod, re.IGNORECASE)
-    for m in matches:
-        art_alvo = m.strip()
-        # Captura o parágrafo ou linha do modificador que cita o artigo novo
-        linhas_mod = texto_mod.split('\n')
-        for l_m in linhas_mod:
-            if art_alvo.lower() in l_m.lower() and len(l_m) > 30:
-                modificacoes[art_alvo.lower()] = l_m.strip()
-
-    html_resultado = []
-    for linha in linhas_orig:
-        art_encontrado = None
-        # Verifica se esta linha original sofreu modificação detectada no texto derivativo
-        for art_chave in modificacoes.keys():
-            if art_chave in linha.lower():
-                art_encontrado = art_chave
-                break
+    try:
+        client = genai.Client(api_key=API_KEY)
         
-        if art_encontrado:
-            texto_novo = modificacoes[art_encontrado]
-            if modo_versao == "alterada":
-                linha_final = f'<span class="tachado-vermelho">{linha}</span> <span class="alterado-vermelho">{texto_novo}</span>'
-            else:
-                linha_final = f'<span class="alterado-vermelho">{texto_novo} (NR)</span>'
-        else:
-            linha_final = linha
+        prompt = f"""
+        Você é um especialista em engenharia documental jurídica e técnica legislativa.
+        Sua tarefa é ler o texto de um "Ato Original" e aplicar as modificações trazidas pelo "Ato Derivativo" obedecendo rigorosamente o escopo solicitado.
 
-        # Formatação estrutural estrita
-        if re.match(r'^(ART\.|ARTIGO)\s*\d+', linha_final, re.IGNORECASE):
-            linha_final = re.sub(r'^(ART\.\s*\d+[º\d\w\s\-\.]+|ARTIGO\s*\d+[º\d\w\s\-\.]+)', r'<b>\1</b>', linha_final, flags=re.IGNORECASE)
-            html_resultado.append(f'<div class="artigo">{linha_final}</div>')
-        elif linha_final.startswith('§') or re.match(r'^(PARÁGRAFO|PARAGRAFO)\s+', linha_final, re.IGNORECASE):
-            html_resultado.append(f'<div class="paragrafo">{linha_final}</div>')
-        else:
-            html_resultado.append(f'<div class="preambulo">{linha_final}</div>')
+        TEXTO DO ATO ORIGINAL:
+        \"\"\"{texto_original}\"\"\"
 
-    return '\n'.join(html_resultado)
+        TEXTO DO ATO DERIVATIVO (MODIFICADOR):
+        \"\"\"{texto_derivativo}\"\"\"
+
+        TIPO DE VERSÃO EXIGIDA: {modo_versao.upper()}
+
+        REGRAS DE CONTEÚDO E FUSÃO:
+        1. Identifique quais artigos, parágrafos ou incisos do Ato Original foram alterados ou revogados pelo Ato Derivativo.
+        2. Se o tipo for VERSAO CONSOLIDADA: Substitua o texto antigo pelo novo texto diretamente. Ao final do trecho alterado, adicione obrigatoriamente a expressão entre parágrafos vermelhos informando a mudança, usando a tag <span class="alterado-vermelho">(Redação dada pelo Ato Modificador)</span>.
+        3. Se o tipo for VERSAO ALTERADA: Mantenha o texto antigo/original, mas envolva-o completamente na tag <span class="tachado-vermelho">texto antigo aqui</span> e insira logo à frente o novo texto modificado envolvido na tag <span class="alterado-vermelho">texto novo aqui</span>.
+        4. Identifique automaticamente na primeira linha significativa de cada documento o Nome Oficial do Ato (Ex: Portaria nº 130/PGJM, de 2022). Seus primeiros outputs devem focar em extrair esses nomes limpos.
+
+        REGRAS ESTREITAS DE FORMATAÇÃO HTML (Obrigatório):
+        - Seu output final deve conter APENAS as tags do corpo do texto que substituem os artigos. Não invente blocos, cabeçalhos ou rodapés.
+        - Toda linha correspondente a um Artigo (ex: Art. 1º, Art. 22) deve ser envelopada estritamente em: <div class="artigo"><b>Art. Xº</b> Resto do texto...</div>
+        - Toda linha correspondente a um Parágrafo (ex: § 1º, Parágrafo único) deve ser envelopada estritamente em: <div class="paragrafo">§ Xº Resto do texto...</div>
+        - Textos de preâmbulo, ementas, assinaturas ou considerandos devem ser envelopados em: <div class="preambulo">Texto aqui...</div>
+        - Não use Markdown (```html) na resposta. Devolva texto puro contendo apenas as marcações das divs mencionadas.
+        """
+
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=prompt
+        )
+        return response.text
+    except Exception as e:
+        return f'<div class="artigo"><b>Erro no processamento da IA:</b> {str(e)}</div>'
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -144,33 +138,33 @@ def index():
         if not pdf_orig or pdf_orig.filename == '':
             return "Erro: O PDF do Ato Original é obrigatório.", 400
 
+        # Extração de textos cruas do PDF
         texto_original = extrair_texto_pdf(pdf_orig)
-        nome_ato_original = extrair_nome_ato(texto_original)
         
         textos_modificadores = []
-        nomes_modificadores = []
         for p in pdf_derivs:
             if p and p.filename != '':
-                txt_m = extrair_texto_pdf(p)
-                textos_modificadores.append(txt_m)
-                nomes_modificadores.append(extrair_nome_ato(txt_m))
-        
+                textos_modificadores.append(extrair_texto_pdf(p))
         texto_modificador_consolidado = "\n".join(textos_modificadores)
-        nome_ato_derivativo = ", ".join(nomes_modificadores) if nomes_modificadores else "Atos Modificadores"
 
-        # Montagem automática dos links
-        link_original_html = f'<a href="{link_original}" target="_blank">{nome_ato_original}</a>' if link_original else f'<span>{nome_ato_original}</span>'
+        # Chamar o motor de inteligência artificial para ler e consolidar os textos de verdade
+        corpo_html = pedir_fusao_ao_gemini(texto_original, texto_modificador_consolidado, tipo_versao)
+
+        # Algoritmo auxiliar para tentar ler nomes de exibição amigáveis no topo do HTML
+        linhas_orig = [l.strip() for l in texto_original.split('\n') if l.strip()]
+        ato_original_nome = linhas_orig[0][:75] if linhas_orig else "Ato Original"
+        nome_ato_derivativo = "Atos Modificadores"
+
+        # Montagem dinâmica de links
+        link_original_html = f'<a href="{link_original}" target="_blank">{ato_original_nome}</a>' if link_original else f'<span>{ato_original_nome}</span>'
         links_derivativos_html = f' | <a href="{link_derivativo}" target="_blank">{nome_ato_derivativo}</a>' if link_derivativo else f' | <span>{nome_ato_derivativo}</span>'
-        
-        # Executa a Fusão e Inteligência Analítica de Texto
-        corpo_html = analisar_e_funder_textos(texto_original, texto_modificador_consolidado, tipo_versao)
         
         if tipo_versao == "alterada":
             tag = f"VERSÃO ALTERADA — Atualizada em razão das alterações promovidas por: {nome_ato_derivativo}"
-            titulo = f"Versão Alterada - {nome_ato_original}"
+            titulo = f"Versão Alterada - {ato_original_nome}"
         else:
             tag = f"VERSÃO CONSOLIDADA — Atualizada em razão das revogações e/ou alterações promovidas por: {nome_ato_derivativo}"
-            titulo = f"Versão Consolidada - {nome_ato_original}"
+            titulo = f"Versão Consolidada - {ato_original_nome}"
             
         html_final = MODELO_HTML_ESTRITO.format(
             titulo_documento=titulo,
