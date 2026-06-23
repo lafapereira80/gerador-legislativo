@@ -6,84 +6,111 @@
     <title>Painel de Consolidação Legislativa</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-50 min-h-screen flex flex-col justify-between font-sans">
+<body class="bg-gray-100 min-h-screen flex flex-col justify-between font-sans">
 
-    <header class="bg-blue-950 text-white shadow-md py-6">
-        <div class="max-w-4xl mx-auto px-4 flex items-center gap-4">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/b/bf/Coat_of_arms_of_Brazil.svg" class="w-12 h-12" alt="Brasão">
+    <header class="bg-blue-950 text-white shadow-md py-4">
+        <div class="max-w-6xl mx-auto px-4 flex items-center gap-4">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/b/bf/Coat_of_arms_of_Brazil.svg" class="w-10 h-10" alt="Brasão">
             <div>
-                <h1 class="text-xl font-bold">Consolidador Automatizado de Atos</h1>
-                <p class="text-xs text-blue-200 uppercase tracking-widest font-semibold">Padrão Unificado de Engenharia Documental</p>
+                <h1 class="text-lg font-bold">Consolidador Automatizado de Atos</h1>
+                <p class="text-[10px] text-blue-200 uppercase tracking-widest font-semibold">Padrão Unificado de Engenharia Documental (MPM)</p>
             </div>
         </div>
     </header>
 
-    <main class="max-w-3xl w-full mx-auto p-4 flex-grow my-8">
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8">
-            <h2 class="text-lg font-bold text-gray-800 mb-6 border-b pb-2">Análise e Leitura Automatizada de PDFs</h2>
+    <main class="max-w-6xl w-full mx-auto p-4 flex-grow my-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 h-fit space-y-4">
+            <h2 class="text-sm font-bold text-gray-700 uppercase border-b pb-2">Etapa 1: Extrair Textos do PDF</h2>
             
-            <form method="POST" enctype="multipart/form-data" class="space-y-6">
+            <form method="POST" enctype="multipart/form-data" class="space-y-4">
+                <input type="hidden" name="acao" value="ler_pdfs">
                 
-                <div class="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                    <h3 class="text-sm font-bold text-blue-900 uppercase tracking-wider">1. Documento do Ato Original</h3>
-                    <div>
-                        <label class="block text-xs font-semibold text-gray-600 mb-1">Link de Publicação Oficial SEI (Opcional)</label>
-                        <input type="url" name="link_original" placeholder="https://sei.mpm.mp.br/... (Se deixar em branco, não gerará link clicável)"
-                               class="w-full rounded border-gray-300 p-2 text-sm border focus:outline-blue-900 bg-white">
-                    </div>
-                    <div class="pt-2">
-                        <label class="block text-xs font-semibold text-gray-600 mb-1">Upload do Arquivo PDF Original (O nome do ato será lido do arquivo) *</label>
-                        <input type="file" name="pdf_original" accept=".pdf" required
-                               class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-900 hover:file:bg-blue-100 cursor-pointer">
-                    </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">PDF do Ato Original *</label>
+                    <input type="file" name="pdf_original" accept=".pdf" required class="w-full text-xs text-gray-500">
                 </div>
 
-                <div class="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                    <h3 class="text-sm font-bold text-blue-900 uppercase tracking-wider">2. Documentos dos Atos Derivativos (Modificadores)</h3>
-                    <div>
-                        <label class="block text-xs font-semibold text-gray-600 mb-1">Link de Publicação Oficial SEI dos Modificadores (Opcional)</label>
-                        <input type="url" name="link_derivativo" placeholder="https://sei.mpm.mp.br/... (Se deixar em branco, não gerará link clicável)"
-                               class="w-full rounded border-gray-300 p-2 text-sm border focus:outline-blue-900 bg-white">
-                    </div>
-                    <div class="pt-2">
-                        <label class="block text-xs font-semibold text-gray-600 mb-1">Upload dos Arquivos PDF Modificadores (Pode selecionar vários) *</label>
-                        <input type="file" name="pdfs_derivativos" accept=".pdf" multiple required
-                               class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-900 hover:file:bg-blue-100 cursor-pointer">
-                        <p class="text-[11px] text-gray-400 mt-1">Dica: Segure a tecla 'Ctrl' (ou 'Cmd' no Mac) para selecionar vários arquivos PDF de uma vez.</p>
-                    </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">PDFs Modificadores (Vários) *</label>
+                    <input type="file" name="pdfs_derivativos" accept=".pdf" multiple required class="w-full text-xs text-gray-500">
                 </div>
 
-                <div class="space-y-2">
-                    <label class="block text-sm font-bold text-gray-700">3. Escolha o Modelo do Arquivo Final</label>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <label class="flex items-center gap-3 bg-white border p-4 rounded-lg cursor-pointer hover:bg-gray-50 transition shadow-sm">
-                            <input type="radio" name="tipo_versao" value="consolidada" checked class="h-4 w-4 text-blue-900">
-                            <div>
-                                <p class="text-sm font-bold text-gray-800">Versão Consolidada</p>
-                                <p class="text-xs text-gray-500">Texto limpo e vigente com notas de alteração.</p>
-                            </div>
-                        </label>
-                        <label class="flex items-center gap-3 bg-white border p-4 rounded-lg cursor-pointer hover:bg-gray-50 transition shadow-sm">
-                            <input type="radio" name="tipo_versao" value="alterada" class="h-4 w-4 text-blue-900">
-                            <div>
-                                <p class="text-sm font-bold text-gray-800">Versão Alterada</p>
-                                <p class="text-xs text-gray-500">Texto histórico com tachados em vermelho.</p>
-                            </div>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="pt-2">
-                    <button type="submit" class="w-full bg-blue-950 hover:bg-blue-900 text-white font-bold py-3 px-4 rounded shadow transition duration-150">
-                        Fazer Leitura dos PDFs e Gerar HTML Oficial
-                    </button>
-                </div>
+                <button type="submit" class="w-full bg-blue-900 text-white font-bold py-2 px-3 text-xs rounded hover:bg-blue-800 shadow transition">
+                    1. Importar e Ler Textos dos PDFs
+                </button>
             </form>
+
+            {% if original or derivativo %}
+            <div class="pt-2 space-y-3">
+                <div>
+                    <label class="block text-[11px] font-bold text-gray-500 uppercase">Texto Lido do Original:</label>
+                    <textarea readonly class="w-full h-32 text-xs p-2 bg-gray-50 border rounded focus:outline-none">{{ original }}</textarea>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-gray-500 uppercase">Texto Lido dos Modificadores:</label>
+                    <textarea readonly class="w-full h-32 text-xs p-2 bg-gray-50 border rounded focus:outline-none">{{ derivativo }}</textarea>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col justify-between">
+            <div>
+                <h2 class="text-sm font-bold text-gray-700 uppercase border-b pb-2 mb-4">Etapa 2: Editor de Consolidação e Engenharia de Matriz</h2>
+                
+                <form method="POST" class="space-y-4">
+                    <input type="hidden" name="acao" value="gerar_html">
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Nome do Ato Original</label>
+                            <input type="text" name="nome_ato_original" placeholder="Ex: Portaria nº 130/PGJM" required class="w-full rounded border p-2 text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Link SEI Original (Opcional)</label>
+                            <input type="url" name="link_original" class="w-full rounded border p-2 text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Nome do(s) Ato(s) Modificador(es)</label>
+                            <input type="text" name="nome_ato_derivativo" placeholder="Ex: Portaria nº 145/PGJM" required class="w-full rounded border p-2 text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Link SEI Modificador (Opcional)</label>
+                            <input type="url" name="link_derivativo" class="w-full rounded border p-2 text-xs">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1">Texto Final do Documento (Cole o Texto do Original Aqui e Faça as Fusões)</label>
+                        <p class="text-[10px] text-gray-400 mb-2">Dica: Adicione <b>[ALTERADO: texto aqui]</b> nas partes alteradas para que o sistema aplique as cores automáticas padrão.</p>
+                        <textarea name="texto_final_revisado" required class="w-full h-64 border p-2 font-mono text-xs rounded focus:outline-blue-900" placeholder="Cole o texto aqui estruturando linha por linha..."></textarea>
+                    </div>
+
+                    <div class="bg-gray-50 p-3 rounded border">
+                        <label class="block text-xs font-bold text-gray-700 mb-2">3. Escolha o Padrão do Modelo de Saída</label>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <label class="flex items-center gap-2 cursor-pointer bg-white p-2 border rounded">
+                                <input type="radio" name="tipo_versao" value="consolidada" checked>
+                                <span class="text-xs font-bold text-gray-700">Versão Consolidada (Limpa + Notas Vermelhas)</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer bg-white p-2 border rounded">
+                                <input type="radio" name="tipo_versao" value="alterada">
+                                <span class="text-xs font-bold text-gray-700">Versão Alterada (Histórica + Tachados)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full bg-blue-950 text-white font-bold py-3 text-xs rounded hover:bg-blue-900 shadow transition">
+                        2. Processar Regras Gráficas e Emitir Arquivo .HTML Oficial
+                    </button>
+                </form>
+            </div>
         </div>
     </main>
 
-    <footer class="bg-gray-100 border-t border-gray-200 text-center py-4 text-xs text-gray-500">
-        Desenvolvido sob as diretrizes de simetria gráfica e conformidade com a LC 95/98.
+    <footer class="bg-gray-200 border-t border-gray-300 text-center py-3 text-[10px] text-gray-500">
+        Desenvolvido sob as diretrizes de simetria gráfica e em conformidade com a LC 95/98.
     </footer>
 
 </body>
