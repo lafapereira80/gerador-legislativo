@@ -6,6 +6,8 @@ from pypdf import PdfReader
 from google import genai
 
 app = Flask(__name__)
+app.config['DEBUG'] = True
+app.config['PROPAGATE_EXCEPTIONS'] = True
 
 # Configura a IA usando a chave cadastrada no Render
 API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -15,7 +17,7 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>{titulo_documento}</title>
+    <title>{{titulo_documento}}</title>
     <style>
         @page {{ size: A4; margin: 25mm 20mm 20mm 25mm; }}
         body {{
@@ -119,9 +121,8 @@ def pedir_fusao_ao_gemini(texto_original, texto_derivativo, modo_versao):
             model='gemini-2.5-flash',
             contents=prompt
         )
-        return response.text
+        return str(response.text)
     except Exception as e_principal:
-        # Se o erro for de servidor indisponível (503) ou alta demanda, aciona a contingência
         msg_erro = str(e_principal).upper()
         if "503" in msg_erro or "UNAVAILABLE" in msg_erro or "DEMAND" in msg_erro:
             try:
@@ -130,7 +131,7 @@ def pedir_fusao_ao_gemini(texto_original, texto_derivativo, modo_versao):
                     model='gemini-1.5-flash',
                     contents=prompt
                 )
-                return response.text
+                return str(response.text)
             except Exception as e_contingencia:
                 return f"Erro: Ambos os modelos de IA falharam. Erro contingência: {str(e_contingencia)}"
         else:
@@ -203,7 +204,6 @@ def index():
             )
             
         except Exception as e:
-            # Captura a falha exata e mostra na tela se algo fora do padrão quebrar o código do Flask
             erro_detalhado = traceback.format_exc()
             return f"<h3>Ocorreu um erro interno no processamento:</h3><pre>{erro_detalhado}</pre>", 500
 
