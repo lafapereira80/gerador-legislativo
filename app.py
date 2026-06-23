@@ -118,7 +118,7 @@ def pedir_fusao_ao_gemini(texto_original, texto_derivativo, modo_versao):
         """
 
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.5-flash',
             contents=prompt
         )
         return response.text
