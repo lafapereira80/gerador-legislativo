@@ -1,5 +1,6 @@
 import os
 from flask import Flask, render_template, request, Response
+from pypdf import PdfReader
 
 app = Flask(__name__)
 
@@ -46,8 +47,8 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
         <div class="versao-tag">{tag_versao}</div>
         <div class="relacionamento-links">
             Documentos Relacionados: 
-            <a href="{link_original}" target="_blank">{nome_original}</a> | 
-            <a href="{link_derivativo}" target="_blank">{nome_derivativo}</a>
+            <a href="{link_original}" target="_blank">{nome_original}</a>
+            {links_derivativos_html}
         </div>
         <div class="linha-versao"></div>
     </div>
@@ -69,42 +70,93 @@ MODELO_HTML_ESTRITO = """<!DOCTYPE html>
 </body>
 </html>"""
 
+def extrair_texto_pdf(arquivo_pdf):
+    """Função auxiliar que lê o arquivo PDF e extrai o texto contido nele"""
+    try:
+        leitor = PdfReader(arquivo_pdf)
+        texto_completo = ""
+        for pagina in leitor.pages:
+            texto_completo += pagina.extract_text() + "\n"
+        return texto_completo
+    except Exception:
+        return ""
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        ato_original = request.form.get('ato_original')
+        # 1. Captura as informações de identificação e links do formulário
+        ato_original_nome = request.form.get('ato_original_nome')
         link_original = request.form.get('link_original')
-        ato_derivativo = request.form.get('ato_derivativo')
         link_derivativo = request.form.get('link_derivativo')
         tipo_versao = request.form.get('tipo_versao')
         
-        corpo_construido = f"""
-        <div class="preambulo">O <b>PROCURADOR-GERAL DE JUSTIÇA MILITAR</b>, no uso de suas atribuições... <b>resolve:</b></div>
-        <div class="artigo"><b>Art. 1º</b> Documento gerado com sucesso para o ato: {ato_original}.</div>
-        <div class="paragrafo">Parágrafo único. Modificações processadas com base no ato derivativo.</div>
-        """
-        
-        if tipo_versao == "alterada":
-            tag = f"VERSÃO ALTERADA — Atualizada em razão das alterações promovidas pela {ato_derivativo}"
-            titulo = f"Versão Alterada - {ato_original}"
-        else:
-            tag = f"VERSÃO CONSOLIDADA — Atualizada em razão das revogações e/ou alterações promovidas pela {ato_derivativo}"
-            titulo = f"Versão Consolidada - {ato_original}"
+        # 2. Captura o arquivo PDF ÚNICO do Ato Original
+        pdf_original = request.files.get('pdf_original')
+        texto_ato_original = ""
+        if pdf_original and pdf_original.filename != '':
+            texto_ato_original = extrair_texto_pdf(pdf_original)
 
+        # 3. Captura UM ou MAIS arquivos PDF dos Atos Derivativos
+        pdfs_derivativos = request.files.getlist('pdfs_derivativos')
+        textos_derivativos = []
+        nomes_derivativos = []
+        
+        for pdf in pdfs_derivativos:
+            if pdf and pdf.filename != '':
+                texto_extraido = extrair_texto_pdf(pdf)
+                textos_derivativos.append(texto_extraido)
+                # Remove a extensão .pdf do nome do arquivo para exibição limpa
+                nome_limpo = os.path.splitext(pdf.filename)[0]
+                nomes_derivativos.append(nome_limpo)
+
+        # 4. Montagem dos links de documentos relacionados no topo
+        texto_atos_derivativos_nome = ", ".join(nomes_derivativos) if nomes_derivativos else "Atos Modificadores"
+        links_derivativos_html = ""
+        if nomes_derivativos:
+            links_derivativos_html = f' | <a href="{link_derivativo}" target="_blank">{texto_atos_derivativos_nome}</a>'
+
+        # 5. Processamento básico do texto (Regras de Negócio)
+        # Em produções futuras, criaremos as funções de inteligência de comparação de texto aqui.
+        # Por enquanto, ele junta o texto lido estruturando nos blocos CSS dinamicamente.
+        corpo_construido = ""
+        if texto_ato_original:
+            linhas = texto_ato_original.split('\n')
+            for linha in lines:
+                linha = linha.strip()
+                if not linha:
+                    continue
+                if linha.upper().startswith("ART.") or linha.upper().startswith("ARTIGO"):
+                    corpo_construido += f'<div class="artigo"><b>{linha}</b></div>\n'
+                elif linha.startswith("§") or linha.upper().startswith("PARÁGRAFO"):
+                    corpo_construido += f'<div class="paragrafo">{linha}</div>\n'
+                else:
+                    corpo_construido += f'<div class="preambulo">{linha}</div>\n'
+        else:
+            corpo_construido = '<div class="artigo"><b>Art. 1º</b> [Nenhum texto pôde ser extraído ou o arquivo PDF original estava vazio].</div>'
+
+        # 6. Define as Tags de Versão baseadas nas escolhas
+        if tipo_versao == "alterada":
+            tag = f"VERSÃO ALTERADA — Atualizada em razão das alterações promovidas por: {texto_atos_derivativos_nome}"
+            titulo = f"Versão Alterada - {ato_original_nome}"
+        else:
+            tag = f"VERSÃO CONSOLIDADA — Atualizada em razão das revogações e/ou alterações promovidas por: {texto_atos_derivativos_nome}"
+            titulo = f"Versão Consolidada - {ato_original_nome}"
+
+        # 7. Preenche o molde HTML oficial do padrão MPM unificado
         html_final = MODELO_HTML_ESTRITO.format(
             titulo_documento=titulo,
             tag_versao=tag,
             link_original=link_original,
-            nome_original=ato_original,
-            link_derivativo=link_derivativo,
-            nome_derivativo=ato_derivativo,
+            nome_original=ato_original_nome,
+            links_derivativos_html=links_derivativos_html,
             corpo_texto=corpo_construido
         )
         
+        # Dispara o download do arquivo .html gerado
         return Response(
             html_final,
             mimetype="text/html",
-            headers={{"Content-disposition": f"attachment; filename={{tipo_versao}}_consolidada.html"}}
+            headers={"Content-disposition": f"attachment; filename={tipo_versao}_consolidada.html"}
         )
 
     return render_template('index.html')
